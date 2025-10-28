@@ -1,52 +1,54 @@
-from fastapi import APIRouter, HTTPException, status
-from app.sсhemas.user import UserCreate, UserLogin, Token, UserResponse
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from app.core.db import get_db
+from app.models.user import User
+from app.schemas.user import UserLogin, UserResponse  # ← импортируем напрямую
 
 router = APIRouter()
 
-# Временное хранилище пользователей (заменится на БД)
-fake_users_db = []
 
-
-@router.post("/register", response_model=UserResponse)
-async def register(user_data: UserCreate):
-    # Проверяем, нет ли уже такого пользователя
-    for user in fake_users_db:
-        if user["email"] == user_data.email or user["username"] == user_data.username:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email or username already exists"
-            )
-
-    # Создаем нового пользователя
-    new_user = {
-        "id": len(fake_users_db) + 1,
-        "username": user_data.username,
-        "email": user_data.email,
-        "avatar_url": None,
-        "is_active": True
-    }
-    fake_users_db.append(new_user)
-
-    return new_user
-
-
-@router.post("/login", response_model=Token)
-async def login(login_data: UserLogin):
+@router.post("/login", response_model=UserResponse)
+async def login(login_data: UserLogin, db: AsyncSession = Depends(get_db)):
     # Ищем пользователя по email или username
-    user = None
-    for u in fake_users_db:
-        if u["email"] == login_data.login or u["username"] == login_data.login:
-            user = u
-            break
+    result = await db.execute(
+        select(User).where(
+            (User.email == login_data.login) | (User.username == login_data.login)
+        )
+    )
+    user = result.scalar_one_or_none()
 
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid login credentials"
+            detail="User not found"
         )
 
-    # Временный токен (заменится на JWT)
-    return {
-        "access_token": f"fake-jwt-token-for-user-{user['id']}",
-        "token_type": "bearer"
-    }
+    # Временная проверка пароля
+    if user.password_hash != login_data.password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid password"
+        )
+
+    return user
+
+
+@router.post("/logout")
+async def logout():
+    return {"message": "Logged out successfully"}
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_current_user(user_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    return user

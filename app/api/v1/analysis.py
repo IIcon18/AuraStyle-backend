@@ -1,76 +1,116 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Header
-from typing import List, Optional
-from app.sсhemas.analysis import StyleAnalysisResponse
-from datetime import datetime
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from app.core.db import get_db
+from app.models.image import Image
+from app.models.result import Result
+from app.schemas.analysis import AnalysisResponse  # ← импортируем напрямую
+import aiofiles
+import os
+import uuid
+import json
 
 router = APIRouter()
 
-# Временное хранилище анализов
-fake_analyses = [
-    {
-        "id": 1,
-        "user_id": 1,
-        "image_url": "/uploads/photo1.jpg",
-        "style_type": "casual",
-        "dominant_colors": ["blue", "white", "black"],
-        "style_score": 75.5,
-        "created_at": "2023-12-01T10:00:00"
-    }
-]
+# Константы для загрузки файлов
+UPLOAD_DIR = "uploads"
+IMAGE_DIR = "uploads/images"
 
 
-def get_current_user_id(authorization: Optional[str] = Header(None)):
-    """Временная функция для получения ID текущего пользователя"""
-    # Всегда возвращаем ID 1 для тестирования
-    return 1
-
-
-@router.post("/analyze", response_model=StyleAnalysisResponse)
-async def analyze_style(file: UploadFile = File(...), authorization: Optional[str] = Header(None)):
-    user_id = get_current_user_id(authorization)
-
+@router.post("/analyze", response_model=AnalysisResponse)
+async def analyze_style(
+        file: UploadFile = File(...),
+        user_id: int = 1,
+        db: AsyncSession = Depends(get_db)
+):
     # Проверяем тип файла
     if not file.content_type.startswith('image/'):
-        raise HTTPException(
-            status_code=400,
-            detail="File must be an image"
-        )
+        raise HTTPException(status_code=400, detail="File must be an image")
 
-    # Временная логика анализа (заменится на ML модель)
-    new_analysis = {
-        "id": len(fake_analyses) + 1,
-        "user_id": user_id,
-        "image_url": f"/uploads/{file.filename}",
-        "style_type": "casual",  # временный результат
-        "dominant_colors": ["blue", "white", "black"],  # временный результат
-        "style_score": 82.5,  # временный результат
-        "created_at": datetime.now().isoformat()
-    }
+    # Сохраняем файл с уникальным именем
+    file_extension = file.filename.split('.')[-1]
+    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+    file_path = f"{IMAGE_DIR}/{unique_filename}"
 
-    fake_analyses.append(new_analysis)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-    return new_analysis
+    async with aiofiles.open(file_path, 'wb') as out_file:
+        content = await file.read()
+        await out_file.write(content)
 
+    # Создаем запись в images
+    image = Image(
+        user_id=user_id,
+        image_path=file_path
+    )
+    db.add(image)
+    await db.commit()
+    await db.refresh(image)
 
-@router.get("/history", response_model=List[StyleAnalysisResponse])
-async def get_user_analysis_history(authorization: Optional[str] = Header(None)):
-    user_id = get_current_user_id(authorization)
+    # Создаем результат анализа (заглушка для ML)
+    result = Result(
+        image_id=image.id,
+        style_type="casual",
+        confidence_score=82.5,
+        dominant_colors=json.dumps(["blue", "white", "black"])
+    )
 
-    # Возвращаем анализы только для текущего пользователя
-    user_analyses = [analysis for analysis in fake_analyses if analysis["user_id"] == user_id]
-
-    return user_analyses
-
-
-@router.delete("/reset")
-async def reset_analysis(authorization: Optional[str] = Header(None)):
-    user_id = get_current_user_id(authorization)
-
-    # Удаляем анализы текущего пользователя
-    global fake_analyses
-    fake_analyses = [analysis for analysis in fake_analyses if analysis["user_id"] != user_id]
+    db.add(result)
+    await db.commit()
+    await db.refresh(result)
 
     return {
-        "message": "Analysis history cleared successfully",
-        "deleted_user_id": user_id
+        "image": image,
+        "result": result
     }
+
+
+@router.get("/history/{user_id}")
+async def get_analysis_history(user_id: int, db: AsyncSession = Depends(get_db)):
+    # Получаем все анализы пользователя с join images и results
+    result = await db.execute(
+        select(Image, Result)
+        .join(Result, Image.id == Result.image_id)
+        .where(Image.user_id == user_id)
+        .order_by(Image.created_at.desc())
+    )
+    analyses = result.all()
+
+    return {
+        "user_id": user_id,
+        "history": [
+            {
+                "analysis_id": result.id,
+                "image_id": image.id,
+                "image_path": image.image_path,
+                "style_type": result.style_type,
+                "confidence_score": result.confidence_score,
+                "dominant_colors": json.loads(result.dominant_colors) if result.dominant_colors else [],
+                "analyzed_at": result.created_at
+            }
+            for image, result in analyses
+        ]
+    }
+
+
+@router.delete("/reset/{user_id}")
+async def reset_analysis(user_id: int, db: AsyncSession = Depends(get_db)):
+    # Находим все изображения пользователя
+    result = await db.execute(
+        select(Image).where(Image.user_id == user_id)
+    )
+    user_images = result.scalars().all()
+
+    # Удаляем результаты и изображения
+    for image in user_images:
+        await db.execute(
+            Result.__table__.delete().where(Result.image_id == image.id)
+        )
+        await db.execute(
+            Image.__table__.delete().where(Image.id == image.id)
+        )
+
+    await db.commit()
+
+    return {"message": f"Analysis history cleared for user {user_id}"}

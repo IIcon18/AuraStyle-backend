@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: aura_db
+      POSTGRES_USER: aura_user
+      POSTGRES_PASSWORD: aura_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://aura_user:aura_password@postgres:5432/aura_db
+      - SECRET_KEY=your-super-secret-key-change-this-in-production
+      - RESET_DATABASE=true
+    depends_on:
+      - postgres
+    volumes:
+      - .:/app
+      - ./uploads:/app/uploads
+
+volumes:
+  postgres_data:
