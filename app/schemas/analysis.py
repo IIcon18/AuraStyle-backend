@@ -1,7 +1,15 @@
 from pydantic import BaseModel
-from app.schemas.image import ImageResponse
-from app.schemas.result import ResultResponse
+from typing import Dict, List, Any
+from datetime import datetime
 
 class AnalysisResponse(BaseModel):
-    image: ImageResponse
-    result: ResultResponse
+    image_id: int
+    result_id: int
+    analysis: Dict[str, Any]
+    analyzed_at: datetime
+
+class AnalysisResult(BaseModel):
+    style: str
+    confidence: float
+    colors: List[str]
+    recommendations: List[str]

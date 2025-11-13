@@ -1,54 +1,34 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-
-from app.core.db import get_db
+# app/api/v1/auth.py
+from fastapi import APIRouter, Depends
+from app.services.auth_service import (
+    AuthService,
+    get_auth_service,
+    get_current_active_user_dependency
+)
 from app.models.user import User
-from app.schemas.user import UserLogin, UserResponse  # ← импортируем напрямую
+from app.schemas.user import UserCreate, UserLogin, UserResponse, Token
 
 router = APIRouter()
 
 
-@router.post("/login", response_model=UserResponse)
-async def login(login_data: UserLogin, db: AsyncSession = Depends(get_db)):
-    # Ищем пользователя по email или username
-    result = await db.execute(
-        select(User).where(
-            (User.email == login_data.login) | (User.username == login_data.login)
-        )
-    )
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
-        )
-
-    # Временная проверка пароля
-    if user.password_hash != login_data.password:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid password"
-        )
-
-    return user
+@router.post("/register", response_model=UserResponse)
+async def register(
+    user_data: UserCreate,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    return await auth_service.register_user(user_data)
 
 
-@router.post("/logout")
-async def logout():
-    return {"message": "Logged out successfully"}
+@router.post("/login", response_model=Token)
+async def login(
+    user_data: UserLogin,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    return await auth_service.authenticate_user(user_data)
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user(user_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-
-    return user
+async def read_users_me(
+    current_user: User = Depends(get_current_active_user_dependency)
+):
+    return current_user

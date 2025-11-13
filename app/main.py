@@ -8,10 +8,18 @@ from app.models.session import Session
 from app.models.image import Image
 from app.models.result import Result
 
-app = FastAPI()
+app = FastAPI(title="AuraStyle Backend", version="1.0.0")
 
 @app.on_event("startup")
 async def startup_event():
     await init_database()
 
 app.include_router(api_router, prefix="/api/v1")
+
+@app.get("/")
+async def read_root():
+    return {"message": "Welcome to AuraStyle Backend"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
