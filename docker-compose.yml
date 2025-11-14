@@ -19,12 +19,18 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://aura_user:aura_password@postgres:5432/aura_db
       - SECRET_KEY=your-super-secret-key-change-this-in-production
-      - RESET_DATABASE=true
+      - RESET_DATABASE=false
     depends_on:
       - postgres
     volumes:
-      - .:/app
       - ./uploads:/app/uploads
+
+  frontend:
+    build: ../AuraStyle-frontend  # ← этот путь правильный!
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:
