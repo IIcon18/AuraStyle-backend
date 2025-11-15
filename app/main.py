@@ -2,9 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
-from app.core.db_init import init_database  # если у тебя есть init_database
-from app.core.db import AsyncSessionLocal    # твоя сессия БД
-from app.models.user import User            # твоя модель User
+from app.core.db_init import init_database
+from app.core.db import AsyncSessionLocal
+from app.models.user import User
 from sqlalchemy import select
 
 app = FastAPI(title="AuraStyle API")
@@ -21,7 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router)
+app.include_router(api_router, prefix="/api/v1")
 
 @app.on_event("startup")
 async def startup_event():
