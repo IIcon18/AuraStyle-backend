@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, field_validator
 import re
 
@@ -36,7 +37,7 @@ class UserLogin(BaseModel):
 
 class UserResponse(UserBase):
     id: int
-    created_at: str
+    created_at: datetime
 
     class Config:
         from_attributes = True

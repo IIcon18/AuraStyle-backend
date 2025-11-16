@@ -8,7 +8,7 @@ from app.models.result import Result
 from app.schemas.analysis import AnalysisResponse
 from datetime import datetime
 
-router = APIRouter()
+router = APIRouter(prefix="/analysis", tags=["analysis"])
 
 
 @router.post("/analyze-image", response_model=AnalysisResponse)

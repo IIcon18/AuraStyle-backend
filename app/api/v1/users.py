@@ -6,7 +6,8 @@ from app.services.auth_service import get_current_active_user_dependency
 from app.models.user import User
 from app.schemas.user import UserResponse
 
-router = APIRouter()
+# 🔥 ДОБАВЬ PREFIX ЗДЕСЬ
+router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("/", response_model=list[UserResponse])
@@ -19,6 +20,14 @@ async def list_users(
     result = await db.execute(select(User).offset(skip).limit(limit))
     users = result.scalars().all()
     return users
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_current_user(
+    current_user: User = Depends(get_current_active_user_dependency),
+):
+    """Получить данные текущего аутентифицированного пользователя"""
+    return current_user
 
 
 @router.get("/{user_id}", response_model=UserResponse)
