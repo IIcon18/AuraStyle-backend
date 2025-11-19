@@ -1,12 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.core.db import get_db
 from app.services.auth_service import get_current_active_user_dependency
 from app.models.user import User
 from app.schemas.user import UserResponse
+import os
+import shutil
+from fastapi.responses import FileResponse
 
-# 🔥 ДОБАВЬ PREFIX ЗДЕСЬ
+
 router = APIRouter(prefix="/users", tags=["users"])
 
 
@@ -46,3 +49,52 @@ async def get_user(
         )
 
     return user
+
+@router.post("/me/avatar", response_model=UserResponse)
+async def upload_avatar(
+        file: UploadFile = File(...),
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_active_user_dependency),
+):
+    """Загрузить аватар пользователя"""
+
+    # Проверяем что файл является изображением
+    if not file.content_type.startswith('image/'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be an image"
+        )
+
+    # Создаем папку для аватаров если её нет
+    avatars_dir = "uploads/avatars"
+    os.makedirs(avatars_dir, exist_ok=True)
+
+    # Генерируем имя файла
+    file_extension = file.filename.split('.')[-1]
+    filename = f"avatar_{current_user.id}.{file_extension}"
+    file_path = os.path.join(avatars_dir, filename)
+
+    # Сохраняем файл
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # Обновляем пользователя в БД
+    current_user.avatar_url = f"/api/v1/users/me/avatar/{filename}"
+    await db.commit()
+    await db.refresh(current_user)
+
+    return current_user
+
+
+@router.get("/me/avatar/{filename}")
+async def get_avatar(filename: str):
+    """Получить аватар пользователя"""
+    file_path = f"uploads/avatars/{filename}"
+
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Avatar not found"
+        )
+
+    return FileResponse(file_path)

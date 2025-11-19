@@ -37,6 +37,7 @@ class UserLogin(BaseModel):
 
 class UserResponse(UserBase):
     id: int
+    avatar_url: str | None = None
     created_at: datetime
 
     class Config:
